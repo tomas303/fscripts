@@ -1,13 +1,18 @@
 open System
 open System.IO
 open System.Text.RegularExpressions
+#load "tutils.fsx"
+open Tom
 
 type OptDir = OptDir of string
 type OptRegex = OptRegex of string
 type CmdLineOptions = {
     dir: OptDir;
     regex: OptRegex;
-}
+
+    }
+
+
 
 type FindInfo =
     | Yes of string list
@@ -17,58 +22,59 @@ type FileInfo = {
     fileName: string;
     hits: FindInfo;
 }
-    
-let main args = 
-    
-    let consoleLogger argName argValue = 
-        printfn "%s=%A" argName argValue 
-    
-    let logger = consoleLogger    
-    
-    let rec parseArgsRec logger args opts =
-        //logger "args" args
+
+let main args =
+
+    let rec parseArgsRec args opts =
         match args with
         | [] ->
             opts
         | ("/d"|"-d"|"--directory")::x::t ->
             let newopts = { opts with dir = OptDir(x)}
-            parseArgsRec logger t newopts
+            parseArgsRec t newopts
         | ("/r"|"-r"|"--regex")::x::t ->
             let newopts = { opts with regex = OptRegex(x)}
-            parseArgsRec logger t newopts
+            parseArgsRec t newopts
         | x::t ->
             eprintfn "Option '%s' is unrecognized" x
-            parseArgsRec logger t opts            
-    
+            parseArgsRec t opts
+
     let defaultOptions = {
         dir = OptDir(Directory.GetCurrentDirectory());
         regex = OptRegex(".*");
         }
-        
+
     let parseArgs args =
-        parseArgsRec logger args defaultOptions            
-            
+        parseArgsRec args defaultOptions
+
     let options = parseArgs (Array.toList args)
-    //logger "options" options
-    
+
     let fileTest regex file =
         let text = File.ReadAllText(file)
         let m = Regex.Match(text, regex)
-        if m.Success then 
-            //logger "groups" m.Groups
+        //Log.writeVal "test:" file
+        if m.Success then
             { fileName=file; hits = Yes [ for g in m.Groups -> g.Value ] }
-        else 
+        else
             { fileName=file; hits = No }
-    
-    let rec fileSearch job dir = 
-        let hits = Directory.GetFiles dir |> Array.map job
-        let subhits = Directory.GetDirectories dir |> Array.map (fileSearch job) |> Array.concat
-        Array.concat [ hits;subhits ]
-        
-    let search =
+
+    let files =
+        let rec ifiles dir =
+            seq {
+                yield!
+                    Directory.EnumerateFiles dir
+                yield!
+                    Directory.EnumerateDirectories dir
+                    |> Seq.map ifiles
+                    |> Seq.collect id
+            }
         let (OptDir dir) = options.dir
+        ifiles dir
+
+    let search =
         let (OptRegex regex) = options.regex
-        fileSearch (fileTest regex) dir
+        let result = Seq.fold (fun result file -> (fileTest regex file)::result) [] files
+        List.rev result
 
     let printResult result =
         match result.hits with
@@ -76,13 +82,12 @@ let main args =
             printfn "%d in %s" x.Length result.fileName
             printfn "\t%A" x
         | No -> printfn "0 in %s" result.fileName
-    
+
     let hits = search
-    //logger "hits" hits
-    hits |> Array.map printResult |> ignore 
-    
+    //Log.write hits
+    hits |> List.map printResult |> ignore
     0
-    
+
 #if INTERACTIVE
 fsi.CommandLineArgs |> Array.toList |> List.tail |> List.toArray |> main
 #else
