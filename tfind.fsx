@@ -79,9 +79,13 @@ let main args =
     let printResult result =
         match result.hits with
         | Yes x ->
+            Console.ForegroundColor<-ConsoleColor.Green
             printfn "%d in %s" x.Length result.fileName
+            Console.ForegroundColor<-ConsoleColor.Cyan
             printfn "\t%A" x
-        | No -> printfn "0 in %s" result.fileName
+        | No ->
+            Console.ForegroundColor<-ConsoleColor.Red
+            printfn "0 in %s" result.fileName
 
     let hits = search
     //Log.write hits
