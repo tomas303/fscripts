@@ -13,9 +13,8 @@ type CmdLineOptions = {
     }
 
 
-
 type FindInfo =
-    | Yes of string list
+    | Yes of string list list
     | No
 
 type FileInfo = {
@@ -50,13 +49,25 @@ let main args =
     let options = parseArgs (Array.toList args)
 
     let fileTest regex file =
+
+        let rec itest result (m:Match) =
+            match m.Success with
+            | true ->
+                let hit = [ for g in m.Groups -> g.Value ]
+                itest (hit::result) (m.NextMatch())
+            | false ->
+                List.rev result
+
         let text = File.ReadAllText(file)
         let m = Regex.Match(text, regex)
         //Log.writeVal "test:" file
-        if m.Success then
-            { fileName=file; hits = Yes [ for g in m.Groups -> g.Value ] }
-        else
+        let findhits = itest [] m
+        //Log.writeVal "findhits:" findhits
+        match findhits with
+        | [] ->
             { fileName=file; hits = No }
+        | _ ->
+            { fileName=file; hits = Yes findhits }
 
     let files =
         let rec ifiles dir =
@@ -83,9 +94,11 @@ let main args =
             printfn "%d in %s" x.Length result.fileName
             Console.ForegroundColor<-ConsoleColor.Cyan
             printfn "\t%A" x
+            printfn "\n"
         | No ->
             Console.ForegroundColor<-ConsoleColor.Red
             printfn "0 in %s" result.fileName
+            printfn "\n"
 
     let hits = search
     //Log.write hits
