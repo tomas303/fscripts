@@ -58,6 +58,23 @@ let main argv =
 
 
 
+    let regexFind input pattern =
+        match input with
+        | RegexMatch pattern m ->
+            m
+        | _ -> []
+
+    let regexPrint m f =
+
+        let rec iprint m =
+            match m with
+            | h::t ->
+                f h
+                iprint t
+            | [] -> ()
+
+        iprint m
+
     let regexReplace (input: string) pattern replacement =
 
         let rec ireplace (m: Match list) output pos =
@@ -75,6 +92,12 @@ let main argv =
     Log.write "Test replacing 2"
     let m = regexReplace "whale||||||shark" "\w+" "X$0X"
     Log.writeVal "m" m
+
+    Log.write "Test finding and printing"
+
+    let m = regexFind "whale||||||shark" "\w"
+    regexPrint m (fun x -> Log.write x.Value)
+
     0
 
 
