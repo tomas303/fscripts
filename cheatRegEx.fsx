@@ -27,8 +27,8 @@ let main argv =
 
     let (|RegexMatch|_|) pattern input =
         let matches = Regex.Matches(input, pattern)
-        Log.writeVal "pattern" pattern
-        Log.writeVal "mc" matches.Count
+        //Log.writeVal "pattern" pattern
+        //Log.writeVal "mc" matches.Count
         if matches.Count > 0 then Some [ for m in matches -> m ]
         else None
 
@@ -38,8 +38,43 @@ let main argv =
     | _ -> Log.write "neco jineho"
 
 
+    let regexFindReplace pattern input replacement =
+        let rec ireplace (m: Match list) =
+            match m with
+            | h::t ->
+                Log.write h.Value
+                Log.write h.Index
+                Log.write (h.Result replacement)
+                ireplace t
+            | [] -> ()
+
+        match input with
+        | RegexMatch pattern m ->
+            ireplace m
+        | _ -> ()
+
+    Log.write "Test replacing"
+    regexFindReplace "\w+" "whale||||||shark" "X$0X"
 
 
+
+    let regexReplace (input: string) pattern replacement =
+
+        let rec ireplace (m: Match list) output pos =
+            match m with
+            | h::t ->
+                let newoutput = output + input.[pos..h.Index-1] + (h.Result replacement)
+                ireplace t newoutput (h.Index + h.Value.Length)
+            | [] -> output
+
+        match input with
+        | RegexMatch pattern m ->
+            ireplace m "" 0
+        | _ -> input
+
+    Log.write "Test replacing 2"
+    let m = regexReplace "whale||||||shark" "\w+" "X$0X"
+    Log.writeVal "m" m
     0
 
 
