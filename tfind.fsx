@@ -9,7 +9,6 @@ type OptRegex = OptRegex of string
 type CmdLineOptions = {
     dir: OptDir;
     regex: OptRegex;
-
     }
 
 
