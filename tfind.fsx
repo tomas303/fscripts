@@ -13,13 +13,13 @@ type CmdLineOptions = {
     }
 
 
-type FindInfo =
+type Matches =
     | Yes of Match list
     | No
 
-type FileInfo = {
+type FileMatches = {
     fileName: string;
-    hits: FindInfo;
+    matches: Matches;
 }
 
 let main args =
@@ -49,12 +49,12 @@ let main args =
     let options = parseArgs (Array.toList args)
 
     let fileTest regex file =
-        let findhits = RX.find (File.ReadAllText(file)) regex
-        match findhits with
+        let m = RX.find (File.ReadAllText(file)) regex
+        match m with
         | [] ->
-            { fileName=file; hits = No }
+            { fileName=file; matches = No }
         | _ ->
-            { fileName=file; hits = Yes findhits }
+            { fileName=file; matches = Yes m }
 
     let files =
         let rec ifiles dir =
@@ -74,17 +74,17 @@ let main args =
         let result = Seq.fold (fun result file -> (fileTest regex file)::result) [] files
         List.rev result
 
-    let printResult result =
+    let printResult fileMatch =
 
-        match result.hits with
-        | Yes x ->
+        match fileMatch.matches with
+        | Yes matches ->
             Console.ForegroundColor<-ConsoleColor.Green
-            printfn "%d in %s" x.Length result.fileName
+            printfn "%d in %s" matches.Length fileMatch.fileName
             Console.ForegroundColor<-ConsoleColor.Cyan
-            RX.print x (fun x -> printfn "\t%A" x)
+            RX.print matches (fun m -> printfn "\t%A" m)
         | No ->
             Console.ForegroundColor<-ConsoleColor.Red
-            printfn "0 in %s" result.fileName
+            printfn "0 in %s" fileMatch.fileName
             printfn "\n"
 
     let hits = search
