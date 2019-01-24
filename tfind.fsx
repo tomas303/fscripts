@@ -14,7 +14,7 @@ type CmdLineOptions = {
 
 
 type FindInfo =
-    | Yes of string list list
+    | Yes of Match list
     | No
 
 type FileInfo = {
@@ -49,20 +49,7 @@ let main args =
     let options = parseArgs (Array.toList args)
 
     let fileTest regex file =
-
-        let rec itest result (m:Match) =
-            match m.Success with
-            | true ->
-                let hit = [ for g in m.Groups -> g.Value ]
-                itest (hit::result) (m.NextMatch())
-            | false ->
-                List.rev result
-
-        let text = File.ReadAllText(file)
-        let m = Regex.Match(text, regex)
-        //Log.writeVal "test:" file
-        let findhits = itest [] m
-        //Log.writeVal "findhits:" findhits
+        let findhits = RX.find (File.ReadAllText(file)) regex
         match findhits with
         | [] ->
             { fileName=file; hits = No }

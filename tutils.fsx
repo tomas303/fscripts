@@ -1,6 +1,7 @@
 namespace Tom
 
 open System.Diagnostics
+open System.Text.RegularExpressions
 
 module Log =
 
@@ -40,3 +41,42 @@ module Timer =
         for i in 1 .. n-1 do
             f x |> ignore
         f x
+
+module RX =
+
+    let (|RegexMatch|_|) pattern input =
+        let matches = Regex.Matches(input, pattern)
+        if matches.Count > 0 then Some [ for m in matches -> m ]
+        else None
+
+    let find input pattern =
+        match input with
+        | RegexMatch pattern m ->
+            m
+        | _ -> []
+
+    let print m f =
+
+        let rec iprint m =
+            match m with
+            | h::t ->
+                f h
+                iprint t
+            | [] -> ()
+
+        iprint m
+
+    let replace (input: string) pattern replacement =
+
+        let rec ireplace (m: Match list) output pos =
+            match m with
+            | h::t ->
+                let newoutput = output + input.[pos..h.Index-1] + (h.Result replacement)
+                ireplace t newoutput (h.Index + h.Value.Length)
+            | [] -> output
+
+        match input with
+        | RegexMatch pattern m ->
+            ireplace m "" 0
+        | _ -> input
+
