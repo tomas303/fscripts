@@ -1,6 +1,7 @@
 namespace Tom
 
 open System.Diagnostics
+open System.IO
 open System.Text.RegularExpressions
 
 module Log =
@@ -41,6 +42,22 @@ module Timer =
         for i in 1 .. n-1 do
             f x |> ignore
         f x
+
+module FI =
+
+    let files dir =
+
+        let rec ifiles dir =
+            seq {
+                yield!
+                    Directory.EnumerateFiles dir
+                yield!
+                    Directory.EnumerateDirectories dir
+                    |> Seq.map ifiles
+                    |> Seq.collect id
+            }
+
+        ifiles dir
 
 module RX =
 

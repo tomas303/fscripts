@@ -56,22 +56,10 @@ let main args =
         | _ ->
             { fileName=file; matches = Yes m }
 
-    let files =
-        let rec ifiles dir =
-            seq {
-                yield!
-                    Directory.EnumerateFiles dir
-                yield!
-                    Directory.EnumerateDirectories dir
-                    |> Seq.map ifiles
-                    |> Seq.collect id
-            }
-        let (OptDir dir) = options.dir
-        ifiles dir
-
     let search =
         let (OptRegex regex) = options.regex
-        let result = Seq.fold (fun result file -> (fileTest regex file)::result) [] files
+        let (OptDir dir) = options.dir
+        let result = Seq.fold (fun result file -> (fileTest regex file)::result) [] (FI.files dir)
         List.rev result
 
     let printResult fileMatch =
