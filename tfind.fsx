@@ -76,19 +76,12 @@ let main args =
 
     let printResult result =
 
-        let rec printHits x =
-            match x with
-            | [] -> ()
-            | h::t ->
-                printfn "\t%A" h
-                printHits t
-
         match result.hits with
         | Yes x ->
             Console.ForegroundColor<-ConsoleColor.Green
             printfn "%d in %s" x.Length result.fileName
             Console.ForegroundColor<-ConsoleColor.Cyan
-            printHits x
+            RX.print x (fun x -> printfn "\t%A" x)
         | No ->
             Console.ForegroundColor<-ConsoleColor.Red
             printfn "0 in %s" result.fileName
