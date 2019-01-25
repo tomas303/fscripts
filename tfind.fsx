@@ -4,9 +4,14 @@ open System.Text.RegularExpressions
 #load "tutils.fsx"
 open Tom
 
+type OptCommand =
+    | Search
+    | Replace
+    | Help
 type OptDir = OptDir of string
 type OptRegex = OptRegex of string
 type CmdLineOptions = {
+    command: OptCommand;
     dir: OptDir;
     regex: OptRegex;
     }
@@ -27,6 +32,15 @@ let main args =
         match args with
         | [] ->
             opts
+        | "search"::t ->
+            let newopts = { opts with command = Search}
+            parseArgsRec t newopts
+        | "replace"::t ->
+            let newopts = { opts with command = Replace}
+            parseArgsRec t newopts
+        | ("/h"|"-h"|"/?"|"-?"|"--help"|"help")::t ->
+            let newopts = { opts with command = Help}
+            parseArgsRec t newopts
         | ("/d"|"-d"|"--directory")::x::t ->
             let newopts = { opts with dir = OptDir(x)}
             parseArgsRec t newopts
@@ -38,6 +52,7 @@ let main args =
             parseArgsRec t opts
 
     let defaultOptions = {
+        command = Search;
         dir = OptDir(Directory.GetCurrentDirectory());
         regex = OptRegex(".*");
         }
