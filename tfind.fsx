@@ -10,12 +10,12 @@ type OptCommand =
     | Search
     | Replace
     | Help
-type OptDir = OptDir of string
+type OptFolder = OptFolder of string
 type OptRegex = OptRegex of string
 type OptReplacement = OptReplacement of string
 type CmdLineOptions = {
     command: OptCommand;
-    dir: OptDir;
+    folder: OptFolder;
     regex: OptRegex;
     replacement: OptReplacement;
     }
@@ -51,8 +51,8 @@ let main args =
         | ("/h"|"-h"|"/?"|"-?"|"--help"|"help")::t ->
             let newopts = { opts with command = Help}
             parseArgsRec t newopts
-        | ("/d"|"-d"|"--directory")::x::t ->
-            let newopts = { opts with dir = OptDir(x)}
+        | ("/f"|"-f"|"--folder")::x::t ->
+            let newopts = { opts with folder = OptFolder(x)}
             parseArgsRec t newopts
         | ("/r"|"-r"|"--regex")::x::t ->
             let newopts = { opts with regex = OptRegex(x)}
@@ -75,7 +75,7 @@ let main args =
 
     let defaultOptions = {
         command = Search;
-        dir = OptDir(Directory.GetCurrentDirectory());
+        folder = OptFolder(Directory.GetCurrentDirectory());
         regex = OptRegex("");
         replacement = OptReplacement("");
         }
@@ -113,15 +113,15 @@ let main args =
     match options.command with
     | Search ->
         let (OptRegex regex) = options.regex
-        let (OptDir dir) = options.dir
-        let matches = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files dir)
+        let (OptFolder folder) = options.folder
+        let matches = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files folder)
         List.rev matches |> ignore
         matches |> List.map printResult |> ignore
     | Replace ->
         let (OptRegex regex) = options.regex
-        let (OptDir dir) = options.dir
+        let (OptFolder folder) = options.folder
         let (OptReplacement replacement) = options.replacement
-        Seq.iter (fun file -> fileReplace regex replacement file) (FI.files dir)
+        Seq.iter (fun file -> fileReplace regex replacement file) (FI.files folder)
     | _ ->
         printfn "Search and replace based on regular expressions"
         printfn ""
@@ -132,7 +132,7 @@ let main args =
         printfn "\thelp\t display help"
         printfn ""
         printfn "\t-h, --help\t same as help"
-        printfn "\t-d, --directory\t directory to be searched(including subdirecotory), default value is current directory"
+        printfn "\t-f, --folder\t folder to be searched(including subfolders), default value is current folder"
         printfn "\t-r, --regex\t regular expression to be searched"
         printfn "\t-p, --replacement\t replacement in case of replace command"
         printfn ""
