@@ -91,11 +91,9 @@ let main args =
         | _ ->
             { fileName=file; matches = Yes m }
 
-    let search =
-        let (OptRegex regex) = options.regex
-        let (OptDir dir) = options.dir
-        let result = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files dir)
-        List.rev result
+    let fileReplace regex replacement file =
+        let m = RX.replace (File.ReadAllText(file)) regex replacement
+        File.WriteAllText (file, m)
 
     let printResult fileMatch =
 
@@ -110,10 +108,41 @@ let main args =
             printfn "0 in %s" fileMatch.fileName
             printfn "\n"
 
-    //let hits = search
-    //Log.write hits
-    //hits |> List.map printResult |> ignore
-    Log.write options
+    match options.command with
+    | Search ->
+        let (OptRegex regex) = options.regex
+        let (OptDir dir) = options.dir
+        let matches = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files dir)
+        List.rev matches |> ignore
+        matches |> List.map printResult |> ignore
+    | Replace ->
+        let (OptRegex regex) = options.regex
+        let (OptDir dir) = options.dir
+        let (OptReplacement replacement) = options.replacement
+        Seq.iter (fun file -> fileReplace regex replacement file) (FI.files dir)
+    | _ ->
+        printfn "Search and replace based on regular expressions"
+        printfn ""
+        printfn "Usage: search|replace|help [-d path] [-r regex] [-p replacement]"
+        printfn ""
+        printfn "\tsearch\t search directory for regex"
+        printfn "\treplace\t search and replace with replacement"
+        printfn "\thelp\t display help"
+        printfn ""
+        printfn "\t-h, --help\t same as help"
+        printfn "\t-d, --directory\t directory to be searched(including subdirecotory), default value is current directory"
+        printfn "\t-r, --regex\t regular expression to be searched"
+        printfn "\t-p, --replacement\t replacement in case of replace command"
+        printfn ""
+        printfn "\tshort parameters can also be prefixed with / instead of -"
+        printfn ""
+        printfn "\tregex parameter value can follow directly search command"
+        printfn "\t fsharpi tfind.fsx search \d+\.\d+"
+        printfn ""
+        printfn "\tregex and replacement parameter value can follow directly replace command"
+        printfn "\t fsharpi tfind.fsx replace (\d+)\.(\d+) $2,$1"
+        printfn ""
+
     0
 
 #if INTERACTIVE
