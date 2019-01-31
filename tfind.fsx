@@ -131,7 +131,7 @@ let main args =
         | exn ->
             printfn "Exception e: %s" exn.Message
 
-    let printHelp =
+    let printHelp options =
         printfn "Search and replace based on regular expressions"
         printfn ""
         printfn "Usage: search|replace|help [-d path] [-r regex] [-p replacement]"
@@ -157,7 +157,7 @@ let main args =
     match options.command with
     | Search -> search options
     | Replace -> replace options
-    | _ -> printHelp
+    | _ -> printHelp options
 
     0
 
