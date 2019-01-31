@@ -110,19 +110,20 @@ let main args =
             printfn "0 in %s" fileMatch.fileName
             printfn "\n"
 
-    match options.command with
-    | Search ->
+    let search options =
         let (OptRegex regex) = options.regex
         let (OptFolder folder) = options.folder
         let matches = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files folder)
         List.rev matches |> ignore
         matches |> List.map printResult |> ignore
-    | Replace ->
+
+    let replace options =
         let (OptRegex regex) = options.regex
         let (OptFolder folder) = options.folder
         let (OptReplacement replacement) = options.replacement
         Seq.iter (fun file -> fileReplace regex replacement file) (FI.files folder)
-    | _ ->
+
+    let printHelp =
         printfn "Search and replace based on regular expressions"
         printfn ""
         printfn "Usage: search|replace|help [-d path] [-r regex] [-p replacement]"
@@ -144,6 +145,11 @@ let main args =
         printfn "\tregex and replacement parameter value can follow directly replace command"
         printfn "\t fsharpi tfind.fsx replace (\d+)\.(\d+) $2,$1"
         printfn ""
+
+    match options.command with
+    | Search -> search options
+    | Replace -> replace options
+    | _ -> printHelp
 
     0
 
