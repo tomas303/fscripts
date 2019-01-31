@@ -111,17 +111,25 @@ let main args =
             printfn "\n"
 
     let search options =
-        let (OptRegex regex) = options.regex
-        let (OptFolder folder) = options.folder
-        let matches = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files folder)
-        List.rev matches |> ignore
-        matches |> List.map printResult |> ignore
+        try
+            let (OptRegex regex) = options.regex
+            let (OptFolder folder) = options.folder
+            let matches = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files folder)
+            List.rev matches |> ignore
+            matches |> List.map printResult |> ignore
+        with
+        | exn ->
+            printfn "Exception e: %s" exn.Message
 
     let replace options =
-        let (OptRegex regex) = options.regex
-        let (OptFolder folder) = options.folder
-        let (OptReplacement replacement) = options.replacement
-        Seq.iter (fun file -> fileReplace regex replacement file) (FI.files folder)
+        try
+            let (OptRegex regex) = options.regex
+            let (OptFolder folder) = options.folder
+            let (OptReplacement replacement) = options.replacement
+            Seq.iter (fun file -> fileReplace regex replacement file) (FI.files folder)
+        with
+        | exn ->
+            printfn "Exception e: %s" exn.Message
 
     let printHelp =
         printfn "Search and replace based on regular expressions"
