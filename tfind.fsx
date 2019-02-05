@@ -24,6 +24,7 @@ type CmdLineOptions = {
 type Matches =
     | Yes of Match list
     | No
+    | Error of string
 
 type FileMatches = {
     fileName: string;
@@ -98,7 +99,7 @@ let main args =
                     { fileName=file; matches = Yes m }
             with
             | exn ->
-                { fileName=file; matches = No }
+                { fileName=file; matches = Error exn.message }
         | FI.Error (FI.ErrMessage message) ->
             { fileName=message; matches = No }
 
