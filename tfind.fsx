@@ -85,17 +85,29 @@ let main args =
 
     let options = parseArgs (Array.toList args)
 
-    let fileFind regex file =
-        let m = RX.find (File.ReadAllText(file)) regex
-        match m with
-        | [] ->
-            { fileName=file; matches = No }
-        | _ ->
-            { fileName=file; matches = Yes m }
+    let fileFind regex filetag =
+        //printfn "file: %s" file
+        match filetag with
+        | FI.OK (FI.FileName file) ->
+            try
+                let m = RX.find (File.ReadAllText(file)) regex
+                match m with
+                | [] ->
+                    { fileName=file; matches = No }
+                | _ ->
+                    { fileName=file; matches = Yes m }
+            with
+            | exn ->
+                { fileName=file; matches = No }
+        | FI.Error (FI.ErrMessage message) ->
+            { fileName=message; matches = No }
 
-    let fileReplace regex replacement file =
-        let m = RX.replace (File.ReadAllText(file)) regex replacement
-        File.WriteAllText (file, m)
+    let fileReplace regex replacement filetag =
+        match filetag with
+        | FI.OK (FI.FileName file) ->
+            let m = RX.replace (File.ReadAllText(file)) regex replacement
+            File.WriteAllText (file, m)
+        | FI.Error (FI.ErrMessage message) -> ()
 
     let printResult fileMatch =
 
@@ -111,22 +123,18 @@ let main args =
             printfn "\n"
 
     let search options =
-        try
-            let (OptRegex regex) = options.regex
-            let (OptFolder folder) = options.folder
-            let matches = Seq.fold (fun result file -> (fileFind regex file)::result) [] (FI.files folder)
-            List.rev matches |> ignore
-            matches |> List.map printResult |> ignore
-        with
-        | exn ->
-            printfn "Exception e: %s" exn.Message
+        let (OptRegex regex) = options.regex
+        let (OptFolder folder) = options.folder
+        let matches = Seq.fold (fun result filetag -> (fileFind regex filetag)::result) [] (FI.files folder)
+        List.rev matches |> ignore
+        matches |> List.map printResult |> ignore
 
     let replace options =
         try
             let (OptRegex regex) = options.regex
             let (OptFolder folder) = options.folder
             let (OptReplacement replacement) = options.replacement
-            Seq.iter (fun file -> fileReplace regex replacement file) (FI.files folder)
+            Seq.iter (fun filetag -> fileReplace regex replacement filetag) (FI.files folder)
         with
         | exn ->
             printfn "Exception e: %s" exn.Message
@@ -158,6 +166,8 @@ let main args =
     | Search -> search options
     | Replace -> replace options
     | _ -> printHelp options
+
+    Log.write options
 
     0
 

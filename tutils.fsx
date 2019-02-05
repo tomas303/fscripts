@@ -45,16 +45,32 @@ module Timer =
 
 module FI =
 
+    type FileName = FileName of string
+    type ErrMessage = ErrMessage of string
+
+    type FileTag =
+        | OK of FileName
+        | Error of ErrMessage
+
+    let isDirAccessible dir =
+        try
+            Directory.EnumerateFiles dir |> ignore
+            true
+        with
+        | exn -> false
+
     let files dir =
 
         let rec ifiles dir =
             seq {
-                yield!
-                    Directory.EnumerateFiles dir
-                yield!
-                    Directory.EnumerateDirectories dir
-                    |> Seq.map ifiles
-                    |> Seq.collect id
+                match isDirAccessible dir with
+                | true ->
+                    for file in Directory.EnumerateFiles dir do
+                        yield OK (FileName file)
+                    for dir in Directory.EnumerateDirectories dir do
+                        yield! ifiles dir
+                | false ->
+                    yield Error (ErrMessage ("dir " + dir + " is not accessible"))
             }
 
         ifiles dir
