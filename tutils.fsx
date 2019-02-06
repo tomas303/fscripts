@@ -50,27 +50,27 @@ module FI =
 
     type FileTag =
         | OK of FileName
-        | Error of ErrMessage
+        | Error of FileName * ErrMessage
 
     let isDirAccessible dir =
         try
             Directory.EnumerateFiles dir |> ignore
-            true
+            (true, "")
         with
-        | exn -> false
+        | exn -> (false, exn.Message)
 
     let files dir =
 
         let rec ifiles dir =
             seq {
                 match isDirAccessible dir with
-                | true ->
+                | (true,  msg) ->
                     for file in Directory.EnumerateFiles dir do
                         yield OK (FileName file)
                     for dir in Directory.EnumerateDirectories dir do
                         yield! ifiles dir
-                | false ->
-                    yield Error (ErrMessage ("dir " + dir + " is not accessible"))
+                | (false,  msg) ->
+                    yield Error (FileName dir, ErrMessage msg)
             }
 
         ifiles dir

@@ -99,16 +99,16 @@ let main args =
                     { fileName=file; matches = Yes m }
             with
             | exn ->
-                { fileName=file; matches = Error exn.message }
-        | FI.Error (FI.ErrMessage message) ->
-            { fileName=message; matches = No }
+                { fileName=file; matches = Error exn.Message }
+        | FI.Error (FI.FileName file, FI.ErrMessage msg) ->
+            { fileName=file; matches = Error msg }
 
     let fileReplace regex replacement filetag =
         match filetag with
         | FI.OK (FI.FileName file) ->
             let m = RX.replace (File.ReadAllText(file)) regex replacement
             File.WriteAllText (file, m)
-        | FI.Error (FI.ErrMessage message) -> ()
+        | FI.Error (FI.FileName file, FI.ErrMessage msg) -> ()
 
     let printResult fileMatch =
 
@@ -119,8 +119,12 @@ let main args =
             Console.ForegroundColor<-ConsoleColor.Cyan
             RX.print matches (fun m -> printfn "\t%A" m)
         | No ->
-            Console.ForegroundColor<-ConsoleColor.Red
+            Console.ForegroundColor<-ConsoleColor.Magenta
             printfn "0 in %s" fileMatch.fileName
+            printfn "\n"
+        | Error msg ->
+            Console.ForegroundColor<-ConsoleColor.Red
+            printfn "error %s in %s" msg fileMatch.fileName
             printfn "\n"
 
     let search options =
