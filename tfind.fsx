@@ -13,11 +13,15 @@ type OptCommand =
 type OptFolder = OptFolder of string
 type OptRegex = OptRegex of string
 type OptReplacement = OptReplacement of string
+type OptVerbose =
+    | HitFiles
+    | AllFiles
 type CmdLineOptions = {
     command: OptCommand;
     folder: OptFolder;
     regex: OptRegex;
     replacement: OptReplacement;
+    verbose: OptVerbose;
     }
 
 
@@ -61,6 +65,9 @@ let main args =
         | ("/p"|"-p"|"--replacement")::x::t ->
             let newopts = { opts with replacement = OptReplacement(x)}
             parseArgsRec t newopts
+        | ("/v"|"-v"|"--verbose")::t ->
+            let newopts = { opts with verbose = AllFiles}
+            parseArgsRec t newopts
         | x::t when opts.command = Search && regexEmpty opts.regex ->
             let newopts = { opts with regex = OptRegex(x)}
             parseArgsRec t newopts
@@ -79,6 +86,7 @@ let main args =
         folder = OptFolder(Directory.GetCurrentDirectory());
         regex = OptRegex("");
         replacement = OptReplacement("");
+        verbose = HitFiles;
         }
 
     let parseArgs args =
@@ -110,7 +118,7 @@ let main args =
             File.WriteAllText (file, m)
         | FI.Error (FI.FileName file, FI.ErrMessage msg) -> ()
 
-    let printResult fileMatch =
+    let printResult verbose fileMatch =
 
         match fileMatch.matches with
         | Yes matches ->
@@ -119,20 +127,26 @@ let main args =
             Console.ForegroundColor<-ConsoleColor.Cyan
             RX.print matches (fun m -> printfn "\t%A" m)
         | No ->
-            Console.ForegroundColor<-ConsoleColor.Magenta
-            printfn "%s:\tnothing found" fileMatch.fileName
-            printfn "\n"
+            match verbose with
+            | AllFiles ->
+                Console.ForegroundColor<-ConsoleColor.Magenta
+                printfn "%s:\tnothing found" fileMatch.fileName
+                printfn "\n"
+            | _ -> ()
         | Error msg ->
-            Console.ForegroundColor<-ConsoleColor.Red
-            printfn "%s:\texception %s" fileMatch.fileName msg
-            printfn "\n"
+            match verbose with
+            | AllFiles ->
+                Console.ForegroundColor<-ConsoleColor.Red
+                printfn "%s:\texception %s" fileMatch.fileName msg
+                printfn "\n"
+            | _ -> ()
 
     let search options =
         let (OptRegex regex) = options.regex
         let (OptFolder folder) = options.folder
         let matches = Seq.fold (fun result filetag -> (fileFind regex filetag)::result) [] (FI.files folder)
         List.rev matches |> ignore
-        matches |> List.map printResult |> ignore
+        matches |> List.map (printResult options.verbose) |> ignore
 
     let replace options =
         try
@@ -157,6 +171,7 @@ let main args =
         printfn "\t-f, --folder\t folder to be searched(including subfolders), default value is current folder"
         printfn "\t-r, --regex\t regular expression to be searched"
         printfn "\t-p, --replacement\t replacement in case of replace command"
+        printfn "\t-v, --verbose\t print files where nothing was found or error encountered aswell"
         printfn ""
         printfn "\tshort parameters can also be prefixed with / instead of -"
         printfn ""
