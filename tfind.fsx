@@ -115,16 +115,16 @@ let main args =
         match fileMatch.matches with
         | Yes matches ->
             Console.ForegroundColor<-ConsoleColor.Green
-            printfn "%d in %s" matches.Length fileMatch.fileName
+            printfn "%s:\t%d" fileMatch.fileName matches.Length
             Console.ForegroundColor<-ConsoleColor.Cyan
             RX.print matches (fun m -> printfn "\t%A" m)
         | No ->
             Console.ForegroundColor<-ConsoleColor.Magenta
-            printfn "0 in %s" fileMatch.fileName
+            printfn "%s:\tnothing found" fileMatch.fileName
             printfn "\n"
         | Error msg ->
             Console.ForegroundColor<-ConsoleColor.Red
-            printfn "error %s in %s" msg fileMatch.fileName
+            printfn "%s:\texception %s" fileMatch.fileName msg
             printfn "\n"
 
     let search options =
