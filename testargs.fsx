@@ -29,11 +29,10 @@ let x = run testCmd ["-cmd"; "kvak"; "-nr"; "6"; "-name"; "bob"]
 printfn "result is %A" x
 *)
 
-let pcommand = parg "-cmd" (fun acum x -> { acum with command = x })
-let pnr = parg "-nr" (fun acum x -> { acum with nr = int x })
-let pnname = parg "-name" (fun acum x -> { acum with name = x })
+let pcommand = parg "cmd" (fun acum x -> { acum with command = x })
+let pnr = parg "nr" (fun acum x -> { acum with nr = int x })
+let pnname = parg "name" (fun acum x -> { acum with name = x })
 
 let testCmd = pcommand .>>. many (pnr <|> pnname)
 let opts = run testCmd defaultOptions ["-cmd"; "kvak"; "-nr"; "6"; "-name"; "bob"]
-
 printfn "result is %A" opts

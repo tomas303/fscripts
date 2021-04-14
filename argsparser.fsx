@@ -9,14 +9,29 @@ type ParseResult<'a> =
 
 type Parser<'T> = Parser of ('T -> string list -> ParseResult<'T * string list>)
 
+
+let (|Prefix|_|) (p:string) (s:string) =
+    if s.StartsWith(p) then
+        Some(s.Substring(p.Length))
+    else
+        None
+
+let argmatch x y =
+    match y with
+    | Prefix "--" z -> z = x
+    | Prefix "-" z -> z = x
+    | Prefix "/" z -> z = x
+    | _ -> false
+
+
 /// parser for parse one argument arg, f takes accumulator and parsed value and
 /// produces new accumaltor
 let parg arg f =
     let innerFn acum args =
         match args with
-            | x::y::z when x = arg ->
+            | x::y::z when argmatch arg x ->
                 Success (f acum y, z)
-            | x::z when x = arg ->
+            | x::z when argmatch arg x ->
                 Success (f acum "", z)
             | [] ->
                 let msg = "No more input"
