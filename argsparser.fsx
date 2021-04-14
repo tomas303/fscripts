@@ -7,11 +7,10 @@ type ParseResult<'a> =
     | Success of 'a
     | Failure of string
 
-//type Parser<'T> = Parser of (string list -> ParseResult<'T * string list>)
 type Parser<'T> = Parser of ('T -> string list -> ParseResult<'T * string list>)
 
-
-// parser for parse one argument
+/// parser for parse one argument arg, f takes accumulator and parsed value and
+/// produces new accumaltor
 let parg arg f =
     let innerFn acum args =
         match args with
@@ -28,13 +27,13 @@ let parg arg f =
     Parser innerFn
 
 
-// run parser on input
+/// helper function for run parser
 let run parser acum args =
     let (Parser innerFn) = parser
     innerFn acum args
 
 
-// match of 2 parsers
+/// will succeed when match both parsers
 let andThen parser1 parser2 =
     let innerFn acum args =
         let result1 = run parser1 acum args
@@ -53,7 +52,7 @@ let andThen parser1 parser2 =
 let ( .>>. ) = andThen
 
 
-// or match of 2 parsers
+/// will succeed when match any parser
 let orElse parser1 parser2 =
     let innerFn acum args =
         let result1 = run parser1 acum args
@@ -67,33 +66,8 @@ let orElse parser1 parser2 =
 
 let ( <|> ) = orElse
 
-(*
-let choice listOfParsers =
-    List.reduce ( <|> ) listOfParsers
 
-
-let anyOf listOfArgs =
-    listOfArgs
-    |> List.map parg // convert into parsers
-    |> choice         // combine them
-
-
-let mapP f parser =
-    let innerFn input =
-        let result = run parser input
-        match result with
-        | Success (value,remaining) ->
-            let newValue = f value
-            Success (newValue, remaining)
-        | Failure err ->
-            Failure err
-    Parser innerFn
-
-let ( <!> ) = mapP
-let ( |>> ) x f = mapP f x
-*)
-
-// helper function for zero or more match
+/// helper function for repetitive match
 let rec parseZeroOrMore parser acum args =
     let firstResult = run parser acum args
     match firstResult with
@@ -105,6 +79,7 @@ let rec parseZeroOrMore parser acum args =
         (subsequentValues,remainingInput)
 
 
+/// will succeed when match zero or more times
 let many parser =
     let innerFn acum args =
         // parse the input -- wrap in Success as it always succeeds
