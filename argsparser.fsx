@@ -24,15 +24,27 @@ let argmatch x y =
     | _ -> false
 
 
+let isarg x =
+    match x with
+    | Prefix "--" z -> true
+    | Prefix "-" z -> true
+    | Prefix "/" z -> true
+    | _ -> false
+
+
 /// parser for parse one argument arg, f takes accumulator and parsed value and
 /// produces new accumaltor
 let parg arg f =
     let innerFn acum args =
         match args with
-            | x::y::z when argmatch arg x ->
-                Success (f acum y, z)
+            | x::y::z when (argmatch arg x) && not (isarg y) ->
+                Success (f acum y, z)       //param and value
             | x::z when argmatch arg x ->
-                Success (f acum "", z)
+                Success (f acum "", z)      //param without value(exists)
+            | x::z when arg = x ->
+                Success (f acum x, z)       //command
+            | x::z when not (isarg x) ->
+                Success (f acum x, z)       //wildcard command(whatever what is not arg, subcommand)
             | [] ->
                 let msg = "No more input"
                 Failure msg
@@ -99,4 +111,22 @@ let many parser =
     let innerFn acum args =
         // parse the input -- wrap in Success as it always succeeds
         Success (parseZeroOrMore parser acum args)
+    Parser innerFn
+
+
+/// helper function for optional parse
+let parseZeroOrOne parser acum args =
+    let firstResult = run parser acum args
+    match firstResult with
+    | Failure err ->
+        (acum, args)  // key, always success
+    | Success (firstValue,inputAfterFirstParse) ->
+        (firstValue,inputAfterFirstParse)
+
+
+/// will succeed when match zero or one time
+let optional parser =
+    let innerFn acum args =
+        // parse the input -- wrap in Success as it always succeeds
+        Success (parseZeroOrOne parser acum args)
     Parser innerFn
