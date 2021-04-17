@@ -20,7 +20,6 @@ let argmatch x y =
     match y with
     | Prefix "--" z -> z = x
     | Prefix "-" z -> z = x
-    | Prefix "/" z -> z = x
     | _ -> false
 
 
@@ -28,7 +27,6 @@ let isarg x =
     match x with
     | Prefix "--" z -> true
     | Prefix "-" z -> true
-    | Prefix "/" z -> true
     | _ -> false
 
 
@@ -43,8 +41,6 @@ let parg arg f =
                 Success (f acum "", z)      //param without value(exists)
             | x::z when arg = x ->
                 Success (f acum x, z)       //command
-            | x::z when not (isarg x) ->
-                Success (f acum x, z)       //wildcard command(whatever what is not arg, subcommand)
             | [] ->
                 let msg = "No more input"
                 Failure msg
@@ -101,16 +97,33 @@ let rec parseZeroOrMore parser acum args =
     | Failure err ->
         (acum, args)  // key, always success
     | Success (firstValue,inputAfterFirstParse) ->
-        let (subsequentValues,remainingInput) =
+        if inputAfterFirstParse.Length < args.Length then
             parseZeroOrMore parser firstValue inputAfterFirstParse
-        (subsequentValues,remainingInput)
-
+        else
+            (firstValue,inputAfterFirstParse)
 
 /// will succeed when match zero or more times
 let many parser =
     let innerFn acum args =
         // parse the input -- wrap in Success as it always succeeds
         Success (parseZeroOrMore parser acum args)
+    Parser innerFn
+
+
+/// will succeed when parse all arguments
+let all parser =
+    let innerFn acum args =
+        let result = run parser acum args
+        match result with
+        | Failure err ->
+            Failure err
+        | Success (value, rest) ->
+            match rest with
+            | [] ->
+                Success (value, rest)
+            | _ ->
+                let msg = sprintf "Unknown argument '%s'" rest.Head
+                Failure msg
     Parser innerFn
 
 
