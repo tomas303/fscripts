@@ -92,6 +92,18 @@ let orElse parser1 parser2 =
 let ( <|> ) = orElse
 
 
+/// will succeed when match any of givev parsers
+let choice listOfParsers =
+  List.reduce ( <|> ) listOfParsers
+
+
+/// Choose any of a list of characters
+let anyOf listOfArgs f =
+  listOfArgs
+  |> List.map ( fun x -> parg x f ) // convert into parsers
+  |> choice         // combine them
+
+
 /// helper function for repetitive match
 let rec parseZeroOrMore parser acum args =
     let firstResult = run parser acum args

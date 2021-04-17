@@ -51,18 +51,10 @@ let main args =
         let pSearch = parg "search" (fun acum x -> { acum with command = Search })
         let pReplace = parg "replace" (fun acum x -> { acum with command = Replace })
         let pHelp = parg "help" (fun acum x -> { acum with command = Help })
-        let pFolder =
-            parg "f" (fun acum x -> { acum with folder = OptFolder(x) })
-            <|> parg "folder" (fun acum x -> { acum with folder = OptFolder(x) })
-        let pRegex =
-            parg "re" (fun acum x -> { acum with regex = OptRegex(x) })
-            <|> parg "regex" (fun acum x -> { acum with regex = OptRegex(x) })
-        let pReplacement =
-            parg "p" (fun acum x -> { acum with replacement = OptReplacement(x) })
-            <|> parg "replacement" (fun acum x -> { acum with replacement = OptReplacement(x) })
-        let pVerbose =
-            parg "v" (fun acum x -> { acum with verbose = AllFiles })
-            <|> parg "verbose" (fun acum x -> { acum with verbose = AllFiles })
+        let pFolder = anyOf ["f";"folder"] (fun acum x -> { acum with folder = OptFolder(x) })
+        let pRegex = anyOf ["re";"regex"] (fun acum x -> { acum with regex = OptRegex(x) })
+        let pReplacement = anyOf ["p";"replacement"] (fun acum x -> { acum with replacement = OptReplacement(x) })
+        let pVerbose = anyOf ["v";"verbose"] (fun acum x -> { acum with verbose = AllFiles })
         let pCmdSearch = pSearch .>>. many (pFolder <|> pRegex <|> pVerbose)
         let pCmdReplace = pReplace .>>. many (pFolder <|> pRegex <|> pReplacement <|> pVerbose)
         let pCmdHelp = pHelp
