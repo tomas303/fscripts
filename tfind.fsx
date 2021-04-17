@@ -93,8 +93,8 @@ let main args =
         printfn "\t-p, --replacement\t replacement in case of replace command"
         printfn "\t-v, --verbose\t print files where nothing was found or error encountered aswell"
         printfn ""
-        printfn "\t fsharpi tfind.fsx search \d+\.\d+"
-        printfn "\t fsharpi tfind.fsx replace (\d+)\.(\d+) $2,$1"
+        printfn "\t dotnet fsi tfind.fsx search \d+\.\d+"
+        printfn "\t dotnet fsi tfind.fsx replace (\d+)\.(\d+) $2,$1"
         printfn ""
 
     let fileFind regex filetag =
