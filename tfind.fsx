@@ -1,10 +1,12 @@
-#!/usr/bin/fsharpi --exec
+#!/usr/bin/dotnet fsi
 
 open System
 open System.IO
 open System.Text.RegularExpressions
 #load "tutils.fsx"
 open Tom
+#load "argsparser.fsx"
+open Argsparser
 
 type OptCommand =
     | Search
@@ -37,50 +39,6 @@ type FileMatches = {
 
 let main args =
 
-    let regexEmpty(OptRegex regex) =
-        regex.Length = 0
-
-    let replacementEmpty(OptReplacement replacement) =
-        replacement.Length = 0
-
-    let rec parseArgsRec args opts =
-        match args with
-        | [] ->
-            opts
-        | "search"::t ->
-            let newopts = { opts with command = Search}
-            parseArgsRec t newopts
-        | "replace"::t ->
-            let newopts = { opts with command = Replace}
-            parseArgsRec t newopts
-        | ("/h"|"-h"|"/?"|"-?"|"--help"|"help")::t ->
-            let newopts = { opts with command = Help}
-            parseArgsRec t newopts
-        | ("/f"|"-f"|"--folder")::x::t ->
-            let newopts = { opts with folder = OptFolder(x)}
-            parseArgsRec t newopts
-        | ("/r"|"-r"|"--regex")::x::t ->
-            let newopts = { opts with regex = OptRegex(x)}
-            parseArgsRec t newopts
-        | ("/p"|"-p"|"--replacement")::x::t ->
-            let newopts = { opts with replacement = OptReplacement(x)}
-            parseArgsRec t newopts
-        | ("/v"|"-v"|"--verbose")::t ->
-            let newopts = { opts with verbose = AllFiles}
-            parseArgsRec t newopts
-        | x::t when opts.command = Search && regexEmpty opts.regex ->
-            let newopts = { opts with regex = OptRegex(x)}
-            parseArgsRec t newopts
-        | x::t when opts.command = Replace && regexEmpty opts.regex ->
-            let newopts = { opts with regex = OptRegex(x)}
-            parseArgsRec t newopts
-        | x::t when opts.command = Replace && not(regexEmpty opts.regex) && replacementEmpty opts.replacement ->
-            let newopts = { opts with replacement = OptReplacement(x)}
-            parseArgsRec t newopts
-        | x::t ->
-            eprintfn "Option '%s' is unrecognized" x
-            parseArgsRec t opts
-
     let defaultOptions = {
         command = Search;
         folder = OptFolder(Directory.GetCurrentDirectory());
@@ -89,10 +47,47 @@ let main args =
         verbose = HitFiles;
         }
 
-    let parseArgs args =
-        parseArgsRec args defaultOptions
+    let pCmdLine =
+        let pSearch = parg "search" (fun acum x -> { acum with command = Search })
+        let pReplace = parg "replace" (fun acum x -> { acum with command = Replace })
+        let pHelp = parg "help" (fun acum x -> { acum with command = Help })
+        let pFolder = anyOf ["f";"folder"] (fun acum x -> { acum with folder = OptFolder(x) })
+        let pRegex = anyOf ["re";"regex"] (fun acum x -> { acum with regex = OptRegex(x) })
+        let pReplacement = anyOf ["p";"replacement"] (fun acum x -> { acum with replacement = OptReplacement(x) })
+        let pVerbose = anyOf ["v";"verbose"] (fun acum x -> { acum with verbose = AllFiles })
+        let pCmdSearch = pSearch .>>. many (pFolder <|> pRegex <|> pVerbose)
+        let pCmdReplace = pReplace .>>. many (pFolder <|> pRegex <|> pReplacement <|> pVerbose)
+        let pCmdHelp = pHelp
+        let pFolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
+        let pRegexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
+        let pReplacementFluid = parg "*" (fun acum x -> { acum with replacement = OptReplacement(x) })
+        let pCmdFluidSearch = pSearch .>>. pRegexFluid .>>. optional(pFolderFluid)
+        let pCmdFluidReplace = pReplace .>>. pRegexFluid .>>. pReplacementFluid .>>. optional(pFolderFluid)
+        all(pCmdFluidSearch
+            <|> pCmdFluidReplace
+            <|> pCmdSearch
+            <|> pCmdReplace
+            <|> pCmdHelp)
 
-    let options = parseArgs (Array.toList args)
+    let printHelp () =
+        printfn ""
+        printfn "Usage:"
+        printfn "\tsearch|replace|help [-f path] [-re regex] [-p replacement]"
+        printfn "\tsearch regex [path]"
+        printfn "\treplace regex replacement [path]"
+        printfn ""
+        printfn "\tsearch\t searches files in path based on regular expression"
+        printfn "\treplace\t replaces searched occurencies with replacement"
+        printfn "\thelp\t show help"
+        printfn ""
+        printfn "\t-f, --folder\t folder to be searched(including subfolders), default value is current folder"
+        printfn "\t-re, --regex\t regular expression to be searched"
+        printfn "\t-p, --replacement\t replacement in case of replace command"
+        printfn "\t-v, --verbose\t print files where nothing was found or error encountered aswell"
+        printfn ""
+        printfn "\t dotnet fsi tfind.fsx search \d+\.\d+"
+        printfn "\t dotnet fsi tfind.fsx replace (\d+)\.(\d+) $2,$1"
+        printfn ""
 
     let fileFind regex filetag =
         //printfn "file: %s" file
@@ -158,37 +153,16 @@ let main args =
         | exn ->
             printfn "Exception e: %s" exn.Message
 
-    let printHelp options =
-        printfn "Search and replace based on regular expressions"
-        printfn ""
-        printfn "Usage: search|replace|help [-d path] [-r regex] [-p replacement]"
-        printfn ""
-        printfn "\tsearch\t search directory for regex"
-        printfn "\treplace\t search and replace with replacement"
-        printfn "\thelp\t display help"
-        printfn ""
-        printfn "\t-h, --help\t same as help"
-        printfn "\t-f, --folder\t folder to be searched(including subfolders), default value is current folder"
-        printfn "\t-r, --regex\t regular expression to be searched"
-        printfn "\t-p, --replacement\t replacement in case of replace command"
-        printfn "\t-v, --verbose\t print files where nothing was found or error encountered aswell"
-        printfn ""
-        printfn "\tshort parameters can also be prefixed with / instead of -"
-        printfn ""
-        printfn "\tregex parameter value can follow directly search command"
-        printfn "\t fsharpi tfind.fsx search \d+\.\d+"
-        printfn ""
-        printfn "\tregex and replacement parameter value can follow directly replace command"
-        printfn "\t fsharpi tfind.fsx replace (\d+)\.(\d+) $2,$1"
-        printfn ""
-
-    match options.command with
-    | Search -> search options
-    | Replace -> replace options
-    | _ -> printHelp options
-
-    Log.write options
-
+    match run pCmdLine defaultOptions (Array.toList args) with
+    | Failure err ->
+        printfn "%s" err
+        printHelp ()
+    | Success (options, _) ->
+        printfn "%A" options
+        match options.command with
+        | Search -> search options
+        | Replace -> replace options
+        | _ -> printHelp ()
     0
 
 #if INTERACTIVE
