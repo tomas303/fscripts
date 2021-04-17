@@ -77,16 +77,15 @@ let main args =
             <|> pCmdReplace
             <|> pCmdHelp)
 
-    let printHelp =
-        printfn "Search and replace based on regular expressions"
+    let printHelp () =
         printfn ""
         printfn "Usage:"
         printfn "\tsearch|replace|help [-f path] [-re regex] [-p replacement]"
         printfn "\tsearch regex [path]"
         printfn "\treplace regex replacement [path]"
         printfn ""
-        printfn "\tsearch\t searches path for regex"
-        printfn "\treplace\t searches and replaces"
+        printfn "\tsearch\t searches files in path based on regular expression"
+        printfn "\treplace\t replaces searched occurencies with replacement"
         printfn "\thelp\t show help"
         printfn ""
         printfn "\t-f, --folder\t folder to be searched(including subfolders), default value is current folder"
@@ -165,12 +164,13 @@ let main args =
     match run pCmdLine defaultOptions (Array.toList args) with
     | Failure err ->
         printfn "%s" err
-        printHelp
+        printHelp ()
     | Success (options, _) ->
+        printfn "%A" options
         match options.command with
         | Search -> search options
         | Replace -> replace options
-        | _ -> printHelp
+        | _ -> printHelp ()
     0
 
 #if INTERACTIVE
