@@ -48,27 +48,36 @@ let main args =
         }
 
     let pCmdLine =
-        let psearch = parg "search" (fun acum x -> { acum with command = Search })
-        let preplace = parg "replace" (fun acum x -> { acum with command = Replace })
-        let phelp = parg "help" (fun acum x -> { acum with command = Help })
-        let pfolder = parg "f" (fun acum x -> { acum with folder = OptFolder(x) })
-        let pfolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
-        let pregex = parg "re" (fun acum x -> { acum with regex = OptRegex(x) })
-        let pregexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
-        let preplacement = parg "p" (fun acum x -> { acum with replacement = OptReplacement(x) })
-        let pverbose = optional (parg "v" (fun acum x -> { acum with verbose = AllFiles }))
-        let pSearch = psearch .>>. many (pfolder <|> pregex <|> pverbose)
-        let pReplace = preplace .>>. many (pfolder <|> pregex <|> preplace <|> pverbose)
-        let pHelp = phelp
-        let pfolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
-        let pregexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
-        let preplacementFluid = parg "*" (fun acum x -> { acum with replacement = OptReplacement(x) })
-        let pSearchFluid = psearch .>>. pregexFluid .>>. optional(pfolderFluid)
-        let pReplaceFluid = psearch .>>. pregexFluid .>>. preplacementFluid .>>. optional(pfolderFluid)
-        let pALL = all(pSearchFluid <|> pReplaceFluid <|> pSearch <|> pReplace <|> pHelp)
-        pALL
+        let pSearch = parg "search" (fun acum x -> { acum with command = Search })
+        let pReplace = parg "replace" (fun acum x -> { acum with command = Replace })
+        let pHelp = parg "help" (fun acum x -> { acum with command = Help })
+        let pFolder =
+            parg "f" (fun acum x -> { acum with folder = OptFolder(x) })
+            <|> parg "folder" (fun acum x -> { acum with folder = OptFolder(x) })
+        let pRegex =
+            parg "re" (fun acum x -> { acum with regex = OptRegex(x) })
+            <|> parg "regex" (fun acum x -> { acum with regex = OptRegex(x) })
+        let pReplacement =
+            parg "p" (fun acum x -> { acum with replacement = OptReplacement(x) })
+            <|> parg "replacement" (fun acum x -> { acum with replacement = OptReplacement(x) })
+        let pVerbose =
+            parg "v" (fun acum x -> { acum with verbose = AllFiles })
+            <|> parg "verbose" (fun acum x -> { acum with verbose = AllFiles })
+        let pCmdSearch = pSearch .>>. many (pFolder <|> pRegex <|> pVerbose)
+        let pCmdReplace = pReplace .>>. many (pFolder <|> pRegex <|> pReplacement <|> pVerbose)
+        let pCmdHelp = pHelp
+        let pFolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
+        let pRegexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
+        let pReplacementFluid = parg "*" (fun acum x -> { acum with replacement = OptReplacement(x) })
+        let pCmdFluidSearch = pSearch .>>. pRegexFluid .>>. optional(pFolderFluid)
+        let pCmdFluidReplace = pReplace .>>. pRegexFluid .>>. pReplacementFluid .>>. optional(pFolderFluid)
+        all(pCmdFluidSearch
+            <|> pCmdFluidReplace
+            <|> pCmdSearch
+            <|> pCmdReplace
+            <|> pCmdHelp)
 
-    let printHelp options =
+    let printHelp =
         printfn "Search and replace based on regular expressions"
         printfn ""
         printfn "Usage:"
@@ -80,7 +89,6 @@ let main args =
         printfn "\treplace\t searches and replaces"
         printfn "\thelp\t show help"
         printfn ""
-        printfn "\t-h, --help\t same as help"
         printfn "\t-f, --folder\t folder to be searched(including subfolders), default value is current folder"
         printfn "\t-re, --regex\t regular expression to be searched"
         printfn "\t-p, --replacement\t replacement in case of replace command"
@@ -157,11 +165,12 @@ let main args =
     match run pCmdLine defaultOptions (Array.toList args) with
     | Failure err ->
         printfn "%s" err
+        printHelp
     | Success (options, _) ->
         match options.command with
         | Search -> search options
         | Replace -> replace options
-        | _ -> printHelp options
+        | _ -> printHelp
     0
 
 #if INTERACTIVE
