@@ -41,6 +41,8 @@ let parg arg f =
                 Success (f acum "", z)      //param without value(exists)
             | x::z when arg = x ->
                 Success (f acum x, z)       //command
+            | x::z when arg = "*" && not (isarg x) ->
+                Success (f acum x, z)       //wild argument for fluid input
             | [] ->
                 let msg = "No more input"
                 Failure msg

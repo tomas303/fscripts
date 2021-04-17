@@ -52,23 +52,33 @@ let main args =
         let preplace = parg "replace" (fun acum x -> { acum with command = Replace })
         let phelp = parg "help" (fun acum x -> { acum with command = Help })
         let pfolder = parg "f" (fun acum x -> { acum with folder = OptFolder(x) })
+        let pfolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
         let pregex = parg "re" (fun acum x -> { acum with regex = OptRegex(x) })
+        let pregexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
         let preplacement = parg "p" (fun acum x -> { acum with replacement = OptReplacement(x) })
         let pverbose = optional (parg "v" (fun acum x -> { acum with verbose = AllFiles }))
-        let pS = psearch .>>. many (pfolder <|> pregex <|> pverbose)
-        let pR = preplace .>>. many (pfolder <|> pregex <|> preplace <|> pverbose)
-        let pH = phelp
-        let pALL = all(pS <|> pR <|> pH)
+        let pSearch = psearch .>>. many (pfolder <|> pregex <|> pverbose)
+        let pReplace = preplace .>>. many (pfolder <|> pregex <|> preplace <|> pverbose)
+        let pHelp = phelp
+        let pfolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
+        let pregexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
+        let preplacementFluid = parg "*" (fun acum x -> { acum with replacement = OptReplacement(x) })
+        let pSearchFluid = psearch .>>. pregexFluid .>>. optional(pfolderFluid)
+        let pReplaceFluid = psearch .>>. pregexFluid .>>. preplacementFluid .>>. optional(pfolderFluid)
+        let pALL = all(pSearchFluid <|> pReplaceFluid <|> pSearch <|> pReplace <|> pHelp)
         pALL
 
     let printHelp options =
         printfn "Search and replace based on regular expressions"
         printfn ""
-        printfn "Usage: search|replace|help [-f path] [-re regex] [-p replacement]"
+        printfn "Usage:"
+        printfn "\tsearch|replace|help [-f path] [-re regex] [-p replacement]"
+        printfn "\tsearch regex [path]"
+        printfn "\treplace regex replacement [path]"
         printfn ""
-        printfn "\tsearch\t search directory for regex"
-        printfn "\treplace\t search and replace"
-        printfn "\thelp\t display help"
+        printfn "\tsearch\t searches path for regex"
+        printfn "\treplace\t searches and replaces"
+        printfn "\thelp\t show help"
         printfn ""
         printfn "\t-h, --help\t same as help"
         printfn "\t-f, --folder\t folder to be searched(including subfolders), default value is current folder"
@@ -76,10 +86,7 @@ let main args =
         printfn "\t-p, --replacement\t replacement in case of replace command"
         printfn "\t-v, --verbose\t print files where nothing was found or error encountered aswell"
         printfn ""
-        printfn "\tregex parameter value can follow directly search command"
         printfn "\t fsharpi tfind.fsx search \d+\.\d+"
-        printfn ""
-        printfn "\tregex and replacement parameter value can follow directly replace command"
         printfn "\t fsharpi tfind.fsx replace (\d+)\.(\d+) $2,$1"
         printfn ""
 
