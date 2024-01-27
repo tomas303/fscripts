@@ -153,7 +153,7 @@ let main args =
         | exn ->
             printfn "Exception e: %s" exn.Message
 
-    match run pCmdLine defaultOptions (Array.toList args) with
+    match run pCmdLine defaultOptions args with
     | Failure err ->
         printfn "%s" err
         printHelp ()
@@ -166,7 +166,7 @@ let main args =
     0
 
 #if INTERACTIVE
-fsi.CommandLineArgs |> Array.toList |> List.tail |> List.toArray |> main
+fsi.CommandLineArgs |> Array.toList |> List.tail |> main
 #else
 [<EntryPoint>]
 let entryPoint args = main args
