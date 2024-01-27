@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch FSI",
+            "request": "launch",
+            "type": "coreclr",
+            "program": "/usr/share/dotnet/sdk/8.0.101/FSharp/fsi.dll",
+            // "args": ["${file}", "--debug+", "--debug:portable", "--optimize-"],
+            "args": ["${file}"],
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false
+        }
+    ]
+}
