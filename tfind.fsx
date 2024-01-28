@@ -2,6 +2,7 @@
 
 open System
 open System.IO
+open System.Threading
 open System.Text.RegularExpressions
 #load "tutils.fsx"
 open Tom
@@ -18,12 +19,14 @@ type OptReplacement = OptReplacement of string
 type OptVerbose =
     | HitFiles
     | AllFiles
+type OptParallels = OptParallels of int
 type CmdLineOptions = {
     command: OptCommand;
     folder: OptFolder;
     regex: OptRegex;
     replacement: OptReplacement;
     verbose: OptVerbose;
+    parallels: OptParallels;
     }
 
 
@@ -37,14 +40,31 @@ type FileMatches = {
     matches: Matches;
 }
 
+
+
+type JobKind =
+    | JKSearch of FI.FileTag * OptRegex * OptVerbose
+    | JKReplace of FI.FileTag * OptRegex * OptReplacement * OptVerbose
+    | JKHelp
+    | JKFinito
+    | JKNoWork
+
+type CoordinatorMessage =
+    | Job of JobKind
+    | RequestJob of AsyncReplyChannel<JobKind>
+    | JobFinished of FileMatches * OptVerbose
+    | NoMoreJobs
+    | WaitAllJobsFinished of AsyncReplyChannel<unit>
+
 let main args =
 
     let defaultOptions = {
         command = Search;
-        folder = OptFolder(Directory.GetCurrentDirectory());
-        regex = OptRegex("");
-        replacement = OptReplacement("");
+        folder = OptFolder (Directory.GetCurrentDirectory());
+        regex = OptRegex "";
+        replacement = OptReplacement "";
         verbose = HitFiles;
+        parallels = OptParallels 0;
         }
 
     let pCmdLine =
@@ -55,14 +75,15 @@ let main args =
         let pRegex = anyOf ["re";"regex"] (fun acum x -> { acum with regex = OptRegex(x) })
         let pReplacement = anyOf ["p";"replacement"] (fun acum x -> { acum with replacement = OptReplacement(x) })
         let pVerbose = anyOf ["v";"verbose"] (fun acum x -> { acum with verbose = AllFiles })
-        let pCmdSearch = pSearch .>>. many (pFolder <|> pRegex <|> pVerbose)
-        let pCmdReplace = pReplace .>>. many (pFolder <|> pRegex <|> pReplacement <|> pVerbose)
+        let pParallels = anyOf ["j";"parallels"] (fun acum x -> { acum with parallels = OptParallels(int(x)) })
+        let pCmdSearch = pSearch .>>. many (pFolder <|> pRegex <|> pVerbose <|> pParallels)
+        let pCmdReplace = pReplace .>>. many (pFolder <|> pRegex <|> pReplacement <|> pVerbose <|> pParallels)
         let pCmdHelp = pHelp
         let pFolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
         let pRegexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
         let pReplacementFluid = parg "*" (fun acum x -> { acum with replacement = OptReplacement(x) })
-        let pCmdFluidSearch = pSearch .>>. pRegexFluid .>>. optional(pFolderFluid)
-        let pCmdFluidReplace = pReplace .>>. pRegexFluid .>>. pReplacementFluid .>>. optional(pFolderFluid)
+        let pCmdFluidSearch = pSearch .>>. pRegexFluid .>>. optional(pFolderFluid) .>>. many (pVerbose <|> pParallels)
+        let pCmdFluidReplace = pReplace .>>. pRegexFluid .>>. pReplacementFluid .>>. optional(pFolderFluid) .>>. many (pVerbose <|> pParallels)
         all(pCmdFluidSearch
             <|> pCmdFluidReplace
             <|> pCmdSearch
@@ -72,7 +93,7 @@ let main args =
     let printHelp () =
         printfn ""
         printfn "Usage:"
-        printfn "\tsearch|replace|help [-f path] [-re regex] [-p replacement]"
+        printfn "\tsearch|replace|help [-f path] [-re regex] [-p replacement] [-j parallels]"
         printfn "\tsearch regex [path]"
         printfn "\treplace regex replacement [path]"
         printfn ""
@@ -84,13 +105,15 @@ let main args =
         printfn "\t-re, --regex\t regular expression to be searched"
         printfn "\t-p, --replacement\t replacement in case of replace command"
         printfn "\t-v, --verbose\t print files where nothing was found or error encountered aswell"
+        printfn "\t-j, --parallels\t number of workers searching for match(zero is default, means no workers)"
+        printfn "\t\t\tnow experimental to find out about MailboxProcessors what are used to implement workers"
         printfn ""
         printfn "\t dotnet fsi tfind.fsx search \d+\.\d+"
         printfn "\t dotnet fsi tfind.fsx replace (\d+)\.(\d+) $2,$1"
         printfn ""
 
     let fileFind regex filetag =
-        //printfn "file: %s" file
+        // printfn "file: %A" filetag
         match filetag with
         | FI.OK (FI.FileName file) ->
             try
@@ -114,7 +137,6 @@ let main args =
         | FI.Error (FI.FileName file, FI.ErrMessage msg) -> ()
 
     let printResult verbose fileMatch =
-
         match fileMatch.matches with
         | Yes matches ->
             Console.ForegroundColor<-ConsoleColor.Green
@@ -136,12 +158,80 @@ let main args =
                 printfn "\n"
             | _ -> ()
 
+    let Coordinator =
+        MailboxProcessor<CoordinatorMessage>.Start(fun inbox ->
+            let queue = new System.Collections.Generic.Queue<JobKind>()
+            let mutable stop = false
+            let mutable tasks = 0
+            let rec loop () = async {
+                let! message = inbox.Receive()
+                // printfn "message: %A" message |> ignore
+                match message with
+                | Job x ->
+                    queue.Enqueue x
+                    tasks <- tasks+1
+                | RequestJob replyChannel ->
+                    if stop && tasks=0 then
+                        replyChannel.Reply <| JKFinito
+                    else
+                        if queue.Count = 0 then
+                            // printf "nojobs\n" |> ignore
+                            replyChannel.Reply <| JKNoWork
+                        else
+                            replyChannel.Reply <| queue.Dequeue()
+                    
+                | JobFinished (matches, verbose) ->
+                    matches |> printResult verbose |> ignore
+                    tasks <- tasks-1
+                | NoMoreJobs -> 
+                    stop <- true
+                | WaitAllJobsFinished replyChannel ->
+                    // printf $"stop: {stop} tasks: {tasks}"
+                    if stop && tasks=0 then
+                        replyChannel.Reply()
+                    else
+                        // or used here async sleep and periodically check
+                        Async.Sleep(100) |> ignore
+                        replyChannel |> WaitAllJobsFinished |> inbox.Post
+                return! loop ()
+            }
+            loop ())
+
+    let Worker() =
+        MailboxProcessor.Start(fun inbox -> 
+            let rec loop () = async {
+                // let! jobkind = Coordinator.PostAndAsyncReply (fun reply -> RequestJob reply)
+                let jobkind = Coordinator.PostAndReply (fun reply -> RequestJob reply)
+                // printfn "jobkind: %A" jobkind |> ignore
+                match jobkind with
+                | JKSearch (filetag, regex ,verbose) ->
+                    let (OptRegex regex) = regex
+                    (fileFind regex filetag, verbose) |> JobFinished |> Coordinator.Post
+                | JKReplace (filetag, regex, replacement, verbose) -> printHelp ()
+                | JKHelp -> printHelp ()
+                | JKFinito ->
+                    return ()
+                | JKNoWork -> 
+                    // printf "sleeping"
+                    Thread.Sleep 100
+                return! loop ()
+            }
+            loop ()
+        )
+
     let search options =
         let (OptRegex regex) = options.regex
         let (OptFolder folder) = options.folder
-        let matches = Seq.fold (fun result filetag -> (fileFind regex filetag)::result) [] (FI.files folder)
-        List.rev matches |> ignore
-        matches |> List.map (printResult options.verbose) |> ignore
+        match options.parallels with
+        | OptParallels(x) when x=0 ->  
+            let matches = Seq.fold (fun result filetag -> (fileFind regex filetag)::result) [] (FI.files folder)
+            List.rev matches |> ignore
+            matches |> List.map (printResult options.verbose) |> ignore
+        | OptParallels(x) ->
+            let workers = [1..x] |> List.map (fun _ -> Worker())
+            Seq.iter (fun filetag -> JKSearch(filetag, options.regex, options.verbose) |> Job |> Coordinator.Post) (FI.files folder)
+            Coordinator.Post(NoMoreJobs)
+            Coordinator.PostAndReply(fun reply -> WaitAllJobsFinished reply)
 
     let replace options =
         try
@@ -167,6 +257,8 @@ let main args =
 
 #if INTERACTIVE
 fsi.CommandLineArgs |> Array.toList |> List.tail |> main
+// ["search"; "let"] |> main
+// ["search"; "let"; "-j"; "4"] |> main
 #else
 [<EntryPoint>]
 let entryPoint args = main args
