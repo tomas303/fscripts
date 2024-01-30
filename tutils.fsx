@@ -113,3 +113,37 @@ module RX =
             ireplace m "" 0
         | _ -> input
 
+module MBX =
+
+    type SigMessage =
+    | Signal
+    | Wait of AsyncReplyChannel<unit>
+
+    type Signaller() = 
+
+        let mutable signaled = false
+        let mutable waitChannel = None
+
+        let mb = MailboxProcessor<SigMessage>.Start(fun inbox ->
+            let rec loop () = async {
+                let! msg = inbox.Receive()
+                // printfn "\nsignaller message: %A" msg |> ignore
+                match msg with
+                | Wait replyChannel ->
+                    match signaled with
+                    | true -> replyChannel.Reply()
+                    | false -> waitChannel <- Some(replyChannel)
+                | Signal ->
+                    match waitChannel with
+                    | Some x -> x.Reply()
+                    | None -> signaled <- true
+                return! loop ()
+            }
+            loop ()
+        )
+        
+        member this.Signal() = 
+            mb.Post(Signal)
+
+        member this.Wait() = 
+            mb.PostAndReply(fun reply -> Wait reply)

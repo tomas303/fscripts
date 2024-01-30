@@ -54,7 +54,6 @@ type CoordinatorMessage =
     | RequestJob of AsyncReplyChannel<JobKind>
     | JobFinished of FileMatches * OptVerbose
     | NoMoreJobs
-    | WaitAllJobsFinished of AsyncReplyChannel<unit>
 
 let main args =
 
@@ -158,6 +157,8 @@ let main args =
                 printfn "\n"
             | _ -> ()
 
+    let signaller = new MBX.Signaller()
+
     let Coordinator =
         MailboxProcessor<CoordinatorMessage>.Start(fun inbox ->
             let queue = new System.Collections.Generic.Queue<JobKind>()
@@ -165,7 +166,7 @@ let main args =
             let mutable tasks = 0
             let rec loop () = async {
                 let! message = inbox.Receive()
-                // printfn "message: %A" message |> ignore
+                // printfn $"stop: {stop} tasks: {tasks}   message: %A{message}\n" |> ignore
                 match message with
                 | Job x ->
                     queue.Enqueue x
@@ -179,20 +180,13 @@ let main args =
                             replyChannel.Reply <| JKNoWork
                         else
                             replyChannel.Reply <| queue.Dequeue()
-                    
                 | JobFinished (matches, verbose) ->
                     matches |> printResult verbose |> ignore
                     tasks <- tasks-1
+                    if stop && tasks=0 then
+                        signaller.Signal() |> ignore
                 | NoMoreJobs -> 
                     stop <- true
-                | WaitAllJobsFinished replyChannel ->
-                    // printf $"stop: {stop} tasks: {tasks}"
-                    if stop && tasks=0 then
-                        replyChannel.Reply()
-                    else
-                        // or used here async sleep and periodically check
-                        Async.Sleep(100) |> ignore
-                        replyChannel |> WaitAllJobsFinished |> inbox.Post
                 return! loop ()
             }
             loop ())
@@ -202,7 +196,7 @@ let main args =
             let rec loop () = async {
                 // let! jobkind = Coordinator.PostAndAsyncReply (fun reply -> RequestJob reply)
                 let jobkind = Coordinator.PostAndReply (fun reply -> RequestJob reply)
-                // printfn "jobkind: %A" jobkind |> ignore
+                // printfn "\njobkind: %A\n" jobkind |> ignore
                 match jobkind with
                 | JKSearch (filetag, regex ,verbose) ->
                     let (OptRegex regex) = regex
@@ -210,10 +204,11 @@ let main args =
                 | JKReplace (filetag, regex, replacement, verbose) -> printHelp ()
                 | JKHelp -> printHelp ()
                 | JKFinito ->
-                    return ()
+                    // return ()
+                    Thread.Sleep 1000000000 |> ignore
                 | JKNoWork -> 
                     // printf "sleeping"
-                    Thread.Sleep 100
+                    Thread.Sleep 100 |> ignore
                 return! loop ()
             }
             loop ()
@@ -231,7 +226,7 @@ let main args =
             let workers = [1..x] |> List.map (fun _ -> Worker())
             Seq.iter (fun filetag -> JKSearch(filetag, options.regex, options.verbose) |> Job |> Coordinator.Post) (FI.files folder)
             Coordinator.Post(NoMoreJobs)
-            Coordinator.PostAndReply(fun reply -> WaitAllJobsFinished reply)
+            signaller.Wait()
 
     let replace options =
         try
