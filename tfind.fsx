@@ -194,22 +194,24 @@ let main args =
     let Worker() =
         MailboxProcessor.Start(fun inbox -> 
             let rec loop () = async {
-                // let! jobkind = Coordinator.PostAndAsyncReply (fun reply -> RequestJob reply)
                 let jobkind = Coordinator.PostAndReply (fun reply -> RequestJob reply)
-                // printfn "\njobkind: %A\n" jobkind |> ignore
+                printfn "\njobkind: %A\n" jobkind |> ignore
                 match jobkind with
                 | JKSearch (filetag, regex ,verbose) ->
                     let (OptRegex regex) = regex
                     (fileFind regex filetag, verbose) |> JobFinished |> Coordinator.Post
-                | JKReplace (filetag, regex, replacement, verbose) -> printHelp ()
-                | JKHelp -> printHelp ()
+                    return! loop ()
+                | JKReplace (filetag, regex, replacement, verbose) ->
+                    printHelp ()
+                    return ()
+                | JKHelp -> 
+                    printHelp ()
+                    return! loop ()
                 | JKFinito ->
-                    // return ()
-                    Thread.Sleep 1000000000 |> ignore
+                    return ()
                 | JKNoWork -> 
-                    // printf "sleeping"
-                    Thread.Sleep 100 |> ignore
-                return! loop ()
+                    do! Async.Sleep(100)
+                    return! loop ()
             }
             loop ()
         )
