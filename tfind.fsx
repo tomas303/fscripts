@@ -157,65 +157,6 @@ let main args =
                 printfn "\n"
             | _ -> ()
 
-    let signaller = new MBX.Signaller()
-
-    let Coordinator =
-        MailboxProcessor<CoordinatorMessage>.Start(fun inbox ->
-            let queue = new System.Collections.Generic.Queue<JobKind>()
-            let mutable stop = false
-            let mutable tasks = 0
-            let rec loop () = async {
-                let! message = inbox.Receive()
-                // printfn $"stop: {stop} tasks: {tasks}   message: %A{message}\n" |> ignore
-                match message with
-                | Job x ->
-                    queue.Enqueue x
-                    tasks <- tasks+1
-                | RequestJob replyChannel ->
-                    if stop && tasks=0 then
-                        replyChannel.Reply <| JKFinito
-                    else
-                        if queue.Count = 0 then
-                            // printf "nojobs\n" |> ignore
-                            replyChannel.Reply <| JKNoWork
-                        else
-                            replyChannel.Reply <| queue.Dequeue()
-                | JobFinished (matches, verbose) ->
-                    matches |> printResult verbose |> ignore
-                    tasks <- tasks-1
-                    if stop && tasks=0 then
-                        signaller.Signal() |> ignore
-                | NoMoreJobs -> 
-                    stop <- true
-                return! loop ()
-            }
-            loop ())
-
-    let Worker() =
-        MailboxProcessor.Start(fun inbox -> 
-            let rec loop () = async {
-                let jobkind = Coordinator.PostAndReply (fun reply -> RequestJob reply)
-                printfn "\njobkind: %A\n" jobkind |> ignore
-                match jobkind with
-                | JKSearch (filetag, regex ,verbose) ->
-                    let (OptRegex regex) = regex
-                    (fileFind regex filetag, verbose) |> JobFinished |> Coordinator.Post
-                    return! loop ()
-                | JKReplace (filetag, regex, replacement, verbose) ->
-                    printHelp ()
-                    return ()
-                | JKHelp -> 
-                    printHelp ()
-                    return! loop ()
-                | JKFinito ->
-                    return ()
-                | JKNoWork -> 
-                    do! Async.Sleep(100)
-                    return! loop ()
-            }
-            loop ()
-        )
-
     let search options =
         let (OptRegex regex) = options.regex
         let (OptFolder folder) = options.folder
@@ -225,10 +166,11 @@ let main args =
             List.rev matches |> ignore
             matches |> List.map (printResult options.verbose) |> ignore
         | OptParallels(x) ->
-            let workers = [1..x] |> List.map (fun _ -> Worker())
-            Seq.iter (fun filetag -> JKSearch(filetag, options.regex, options.verbose) |> Job |> Coordinator.Post) (FI.files folder)
-            Coordinator.Post(NoMoreJobs)
-            signaller.Wait()
+            let searcher = new MBX.Coordinator<FI.FileTag, FileMatches>(fileFind regex, x)
+            Observable.add (printResult options.verbose) searcher
+            Seq.iter (fun filetag -> searcher.PostJob(filetag) |> ignore) (FI.files folder)
+            searcher.PostFinished()
+            searcher.WaitAllJobs()
 
     let replace options =
         try

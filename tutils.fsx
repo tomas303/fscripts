@@ -1,7 +1,8 @@
 namespace Tom
 
-open System.Diagnostics
+open System
 open System.IO
+open System.Diagnostics
 open System.Text.RegularExpressions
 
 module Log =
@@ -147,3 +148,120 @@ module MBX =
 
         member this.Wait() = 
             mb.PostAndReply(fun reply -> Wait reply)
+
+
+    type CoordinatorObservable<'a>() =
+        let observers = Collections.Generic.List<IObserver<'a>>()  
+        
+        interface System.IObservable<'a> with
+            member this.Subscribe observer =
+                observers.Add observer
+                { new System.IDisposable with 
+                    member this.Dispose() = 
+                        observers.Remove observer |> ignore 
+                }
+        member this.NotifyNext(value) =
+            for x in observers do
+                try
+                    x.OnNext value
+                with e ->
+                    ignore()
+        member this.NotifyError(ex) =
+            for x in observers do
+                try
+                    x.OnError ex
+                with e ->
+                    ignore()
+        member this.NotifyCompleted() =
+            for x in observers do
+                try
+                    x.OnCompleted ()
+                with e ->
+                    ignore()
+
+    type Coordinator<'a, 'b> (jobFunc, workerCount) as this =
+        let jobFunc = jobFunc
+        let workers = [1..workerCount] |> List.map (fun _ -> new Worker<'a, 'b>(this))
+        let queue = new System.Collections.Generic.Queue<'a>()
+        let signaller = new Signaller()
+        let coordinatorObservable = new CoordinatorObservable<'b>()
+        let mutable stop = false
+        let mutable tasks = 0
+
+        
+
+        let mb = MailboxProcessor<CoordinatorMessage<'a, 'b>>.Start(fun inbox ->
+            let rec loop () = async {
+                let! msg = inbox.Receive()
+                // printfn $"stop: {stop} tasks: {tasks}   message: %A{message}\n" |> ignore
+                match msg with
+                | Job x ->
+                    queue.Enqueue x
+                    tasks <- tasks + 1
+                | RequestJob repch ->
+                    if stop && tasks=0 then
+                        repch.Reply JKFinito
+                    else
+                        if queue.Count = 0 then
+                            // printf "nojobs\n" |> ignore
+                            repch.Reply JKNoWork
+                        else
+                            repch.Reply (JKJob (jobFunc, queue.Dequeue()))
+                | JobFinished x ->
+                    coordinatorObservable.NotifyNext x
+                    tasks <- tasks-1
+                    if stop && tasks=0 then
+                        coordinatorObservable.NotifyCompleted()
+                        signaller.Signal() |> ignore
+                | NoMoreJobs -> 
+                    stop <- true
+                return! loop ()
+            }
+            loop ())
+
+        interface System.IObservable<'b> with
+            member this.Subscribe(observer) =
+                (coordinatorObservable :> System.IObservable<'b>).Subscribe(observer)
+        member this.PostJob(x) =
+            mb.Post(Job(x))
+        member this.PostFinished() =
+            mb.Post(NoMoreJobs)
+        member this.GetJob() =
+            mb.PostAndReply (fun repch -> RequestJob repch)
+        member this.JobFinished(x) =
+            mb.Post (JobFinished(x))
+        member this.WaitAllJobs() =
+            signaller.Wait()
+
+    and JobFunc<'a, 'b> = 'a -> 'b
+    and JobRun<'a, 'b> = JobFunc<'a, 'b> * 'a
+
+    and WorkerMessage<'a, 'b> =
+    | JKJob of JobRun<'a, 'b>
+    | JKFinito
+    | JKNoWork
+    
+    and CoordinatorMessage<'a, 'b> =
+    | Job of 'a
+    | RequestJob of AsyncReplyChannel<WorkerMessage<'a, 'b>>
+    | JobFinished of 'b
+    | NoMoreJobs
+
+    and Worker<'a, 'b>(coordinator: Coordinator<'a, 'b>) =
+        let coordinator = coordinator
+        let mb = MailboxProcessor.Start(fun inbox -> 
+            let rec loop () = async {
+                let job = coordinator.GetJob()
+                // printfn "\njobkind: %A\n" jobkind |> ignore
+                match job with
+                | JKJob (f, x) ->
+                    coordinator.JobFinished(f(x))
+                    return! loop ()
+                | JKFinito ->
+                    return ()
+                | JKNoWork -> 
+                    do! Async.Sleep(10)
+                    return! loop ()
+            }
+            loop ()
+        )
