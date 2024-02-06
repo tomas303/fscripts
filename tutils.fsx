@@ -182,13 +182,12 @@ module MBX =
     type Coordinator<'a, 'b> (jobFunc, workerCount) as this =
         let jobFunc = jobFunc
         let workers = [1..workerCount] |> List.map (fun _ -> new Worker<'a, 'b>(this))
-        let queue = new System.Collections.Generic.Queue<'a>()
+        let dataQueue = new System.Collections.Generic.Queue<'a>()
+        let workerQueue = new System.Collections.Generic.Queue<AsyncReplyChannel<WorkerMessage<'a, 'b>>>()
         let signaller = new Signaller()
         let coordinatorObservable = new CoordinatorObservable<'b>()
         let mutable stop = false
         let mutable tasks = 0
-
-        
 
         let mb = MailboxProcessor<CoordinatorMessage<'a, 'b>>.Start(fun inbox ->
             let rec loop () = async {
@@ -196,23 +195,27 @@ module MBX =
                 // printfn $"stop: {stop} tasks: {tasks}   message: %A{message}\n" |> ignore
                 match msg with
                 | Job x ->
-                    queue.Enqueue x
+                    match workerQueue.Count with
+                    | cnt when cnt > 0 ->
+                        (jobFunc, x) |> JKJob |> workerQueue.Dequeue().Reply
+                    | _ -> dataQueue.Enqueue x
                     tasks <- tasks + 1
                 | RequestJob repch ->
-                    if stop && tasks=0 then
-                        repch.Reply JKFinito
-                    else
-                        if queue.Count = 0 then
-                            // printf "nojobs\n" |> ignore
-                            repch.Reply JKNoWork
-                        else
-                            repch.Reply (JKJob (jobFunc, queue.Dequeue()))
+                    match stop && tasks=0 with
+                    | true -> repch.Reply JKFinito
+                    | _ ->
+                        match dataQueue.Count with
+                        | 0 -> workerQueue.Enqueue repch
+                        | _ -> (jobFunc, dataQueue.Dequeue()) |> JKJob |> repch.Reply
                 | JobFinished x ->
                     coordinatorObservable.NotifyNext x
                     tasks <- tasks-1
-                    if stop && tasks=0 then
+                    match stop && tasks=0 with
+                    | true ->
+                        for x in workerQueue do x.Reply JKFinito
                         coordinatorObservable.NotifyCompleted()
-                        signaller.Signal() |> ignore
+                        signaller.Signal()
+                    | _ -> ()
                 | NoMoreJobs -> 
                     stop <- true
                 return! loop ()
@@ -239,8 +242,7 @@ module MBX =
     and WorkerMessage<'a, 'b> =
     | JKJob of JobRun<'a, 'b>
     | JKFinito
-    | JKNoWork
-    
+
     and CoordinatorMessage<'a, 'b> =
     | Job of 'a
     | RequestJob of AsyncReplyChannel<WorkerMessage<'a, 'b>>
@@ -255,13 +257,10 @@ module MBX =
                 // printfn "\njobkind: %A\n" jobkind |> ignore
                 match job with
                 | JKJob (f, x) ->
-                    coordinator.JobFinished(f(x))
+                    x |> f |> coordinator.JobFinished
                     return! loop ()
                 | JKFinito ->
                     return ()
-                | JKNoWork -> 
-                    do! Async.Sleep(10)
-                    return! loop ()
             }
             loop ()
         )
