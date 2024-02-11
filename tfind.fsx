@@ -19,6 +19,10 @@ type OptReplacement = OptReplacement of string
 type OptVerbose =
     | HitFiles
     | AllFiles
+type OptTechnique =
+    | Single
+    | ParallelByMailbox
+    | ParallelByChannel
 type OptParallels = OptParallels of int
 type CmdLineOptions = {
     command: OptCommand;
@@ -26,6 +30,7 @@ type CmdLineOptions = {
     regex: OptRegex;
     replacement: OptReplacement;
     verbose: OptVerbose;
+    technique: OptTechnique;
     parallels: OptParallels;
     }
 
@@ -63,6 +68,7 @@ let main args =
         regex = OptRegex "";
         replacement = OptReplacement "";
         verbose = HitFiles;
+        technique = Single;
         parallels = OptParallels 0;
         }
 
@@ -74,15 +80,16 @@ let main args =
         let pRegex = anyOf ["re";"regex"] (fun acum x -> { acum with regex = OptRegex(x) })
         let pReplacement = anyOf ["p";"replacement"] (fun acum x -> { acum with replacement = OptReplacement(x) })
         let pVerbose = anyOf ["v";"verbose"] (fun acum x -> { acum with verbose = AllFiles })
+        let pTechnique = anyOf ["t";"technique"] (fun acum x -> { acum with technique = if x = "mb" then ParallelByMailbox elif x = "ch" then ParallelByChannel else  Single})
         let pParallels = anyOf ["j";"parallels"] (fun acum x -> { acum with parallels = OptParallels(int(x)) })
-        let pCmdSearch = pSearch .>>. many (pFolder <|> pRegex <|> pVerbose <|> pParallels)
-        let pCmdReplace = pReplace .>>. many (pFolder <|> pRegex <|> pReplacement <|> pVerbose <|> pParallels)
+        let pCmdSearch = pSearch .>>. many (pFolder <|> pRegex <|> pVerbose <|> pTechnique <|> pParallels)
+        let pCmdReplace = pReplace .>>. many (pFolder <|> pRegex <|> pReplacement <|> pVerbose <|> pTechnique <|> pParallels)
         let pCmdHelp = pHelp
         let pFolderFluid = parg "*" (fun acum x -> { acum with folder = OptFolder(x) })
         let pRegexFluid = parg "*" (fun acum x -> { acum with regex = OptRegex(x) })
         let pReplacementFluid = parg "*" (fun acum x -> { acum with replacement = OptReplacement(x) })
-        let pCmdFluidSearch = pSearch .>>. pRegexFluid .>>. optional(pFolderFluid) .>>. many (pVerbose <|> pParallels)
-        let pCmdFluidReplace = pReplace .>>. pRegexFluid .>>. pReplacementFluid .>>. optional(pFolderFluid) .>>. many (pVerbose <|> pParallels)
+        let pCmdFluidSearch = pSearch .>>. pRegexFluid .>>. optional(pFolderFluid) .>>. many (pVerbose <|> pTechnique <|> pParallels)
+        let pCmdFluidReplace = pReplace .>>. pRegexFluid .>>. pReplacementFluid .>>. optional(pFolderFluid) .>>. many (pVerbose <|> pTechnique <|> pParallels)
         all(pCmdFluidSearch
             <|> pCmdFluidReplace
             <|> pCmdSearch
@@ -104,6 +111,7 @@ let main args =
         printfn "\t-re, --regex\t regular expression to be searched"
         printfn "\t-p, --replacement\t replacement in case of replace command"
         printfn "\t-v, --verbose\t print files where nothing was found or error encountered aswell"
+        printfn "\t-t, --technique\t internal technique for search(mb - parallel by use of mailboxes, ch - parallel by channel, si - non parallel)"
         printfn "\t-j, --parallels\t number of workers searching for match(zero is default, means no workers)"
         printfn "\t\t\tnow experimental to find out about MailboxProcessors what are used to implement workers"
         printfn ""
@@ -160,17 +168,25 @@ let main args =
     let search options =
         let (OptRegex regex) = options.regex
         let (OptFolder folder) = options.folder
-        match options.parallels with
-        | OptParallels(x) when x=0 ->  
+        let (OptParallels parallels) = options.parallels
+        match options.technique with
+        | Single ->
             let matches = Seq.fold (fun result filetag -> (fileFind regex filetag)::result) [] (FI.files folder)
             List.rev matches |> ignore
             matches |> List.map (printResult options.verbose) |> ignore
-        | OptParallels(x) ->
-            let searcher = new MBX.Coordinator<FI.FileTag, FileMatches>(fileFind regex, x)
+        | ParallelByMailbox ->
+            let searcher = new MBX.Coordinator<FI.FileTag, FileMatches>(fileFind regex, parallels)
             Observable.add (printResult options.verbose) searcher
             Seq.iter (fun filetag -> searcher.PostJob(filetag) |> ignore) (FI.files folder)
             searcher.PostFinished()
             searcher.WaitAllJobs()
+        | ParallelByChannel ->
+            let runner = new CH.Runner<FI.FileTag, FileMatches>(fileFind regex, parallels)
+            Observable.add (printResult options.verbose) runner
+            Seq.iter (fun filetag -> runner.PostJob(filetag) |> ignore) (FI.files folder)
+            runner.PostFinished()
+            runner.WaitAllJobs()
+
 
     let replace options =
         try

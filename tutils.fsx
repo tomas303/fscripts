@@ -264,3 +264,50 @@ module MBX =
             }
             loop ()
         )
+
+module CH =
+    open System.Threading
+    open System.Threading.Channels
+    open System.Threading.Tasks
+    
+    type JobFunc<'a, 'b> = 'a -> 'b
+
+    type Runner<'a, 'b>(jobFunc: JobFunc<'a, 'b>, boundedAmount) =
+        let jobFunc = jobFunc
+        let channel = Channel.CreateBounded<'b>(BoundedChannelOptions(boundedAmount))
+        let obs = new MBX.CoordinatorObservable<'b>()
+        let mutable finito = false
+        let sem = new SemaphoreSlim(boundedAmount)
+        let reader = async {
+            let rec loop () = async {
+                // valuetask.completed ... never was, question how to do it without AsTask
+                let! canRead = Async.AwaitTask(channel.Reader.WaitToReadAsync().AsTask())
+                if canRead then
+                    let count = sem.Release()
+                    let! data = Async.AwaitTask(channel.Reader.ReadAsync().AsTask())
+                    obs.NotifyNext data
+                else
+                    return ()
+                do! loop ()
+            }
+            do! loop ()
+        } 
+        let _ = reader |> Async.Start
+
+        interface System.IObservable<'b> with
+            member this.Subscribe(observer) =
+                (obs :> System.IObservable<'b>).Subscribe(observer)
+
+        member this.PostJob(x) =
+            sem.Wait()
+            Task.Run(fun () ->
+                let y = jobFunc x
+                (channel.Writer.WriteAsync y).AsTask().Wait())
+
+        member this.PostFinished() =
+            printfn "finished \n"
+            finito <- true
+            channel.Writer.Complete()
+
+        member this.WaitAllJobs() =
+            channel.Reader.Completion.Wait()
