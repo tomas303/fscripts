@@ -116,6 +116,9 @@ module RX =
 
 module MBX =
 
+    open System.Threading
+    open System.Threading.Tasks
+
     type SigMessage =
     | Signal
     | Wait of AsyncReplyChannel<unit>
@@ -180,39 +183,57 @@ module MBX =
                     ignore()
 
     type Coordinator<'a, 'b> (jobFunc, workerCount) as this =
-        let jobFunc = jobFunc
-        let workers = [1..workerCount] |> List.map (fun _ -> new Worker<'a, 'b>(this))
+        let workers = [1..workerCount] |> List.map (fun _ -> new Worker<'a, 'b>(jobFunc, this))
+        let workerQueue = new System.Collections.Generic.Queue<AsyncReplyChannel<WorkerMessage<'a>>>()
         let dataQueue = new System.Collections.Generic.Queue<'a>()
-        let workerQueue = new System.Collections.Generic.Queue<AsyncReplyChannel<WorkerMessage<'a, 'b>>>()
         let signaller = new Signaller()
         let coordinatorObservable = new CoordinatorObservable<'b>()
+        let streamer = new Streamer<'b>(coordinatorObservable)
+        let sem = new SemaphoreSlim(workerCount * 8)
         let mutable stop = false
         let mutable tasks = 0
+
+        let dequeaargs cnt =
+            let cn = if cnt > dataQueue.Count then dataQueue.Count else cnt
+            // printf $"cn: {cn}  len: {dataQueue.Count}\n"
+            let dques = [|1..cn|] |> Array.map (fun _ -> dataQueue.Dequeue()) |> Array.toList
+            dques
 
         let mb = MailboxProcessor<CoordinatorMessage<'a, 'b>>.Start(fun inbox ->
             let rec loop () = async {
                 let! msg = inbox.Receive()
-                // printfn $"stop: {stop} tasks: {tasks}   message: %A{message}\n" |> ignore
+                // printfn $"stop: {stop} tasks: {tasks}   message: %A{msg}\n" |> ignore
                 match msg with
                 | Job x ->
                     match workerQueue.Count with
                     | cnt when cnt > 0 ->
-                        (jobFunc, x) |> JKJob |> workerQueue.Dequeue().Reply
-                    | _ -> dataQueue.Enqueue x
+                        [x] |> JKJob |> workerQueue.Dequeue().Reply
+                        sem.Release 1 |> ignore
+                    | _ -> 
+                        dataQueue.Enqueue x
                     tasks <- tasks + 1
+
                 | RequestJob repch ->
                     match stop && tasks=0 with
                     | true -> repch.Reply JKFinito
                     | _ ->
+                        // printf "aaa\n"
+                        //let dques = dequeaargs (int(workerCount / 3 + 1))
                         match dataQueue.Count with
                         | 0 -> workerQueue.Enqueue repch
-                        | _ -> (jobFunc, dataQueue.Dequeue()) |> JKJob |> repch.Reply
+                        | _ -> 
+                            // let dques = dequeaargs (int(workerCount / 3 + 1))
+                            let dques = dequeaargs 10
+                            dques |> JKJob |> repch.Reply
+                            sem.Release dques.Length |> ignore
+
                 | JobFinished x ->
-                    coordinatorObservable.NotifyNext x
-                    tasks <- tasks-1
+                    // coordinatorObservable.NotifyNext x
+                    streamer.Stream x
+                    tasks <- tasks-x.Length
+                    // printf $"jobfinished  tasks: {tasks}  stop: {stop}\n"
                     match stop && tasks=0 with
                     | true ->
-                        for x in workerQueue do x.Reply JKFinito
                         coordinatorObservable.NotifyCompleted()
                         signaller.Signal()
                     | _ -> ()
@@ -226,6 +247,7 @@ module MBX =
             member this.Subscribe(observer) =
                 (coordinatorObservable :> System.IObservable<'b>).Subscribe(observer)
         member this.PostJob(x) =
+            sem.Wait()
             mb.Post(Job(x))
         member this.PostFinished() =
             mb.Post(NoMoreJobs)
@@ -237,33 +259,55 @@ module MBX =
             signaller.Wait()
 
     and JobFunc<'a, 'b> = 'a -> 'b
-    and JobRun<'a, 'b> = JobFunc<'a, 'b> * 'a
-
-    and WorkerMessage<'a, 'b> =
-    | JKJob of JobRun<'a, 'b>
+    
+    and WorkerMessage<'a> =
+    | JKJob of 'a list
     | JKFinito
 
     and CoordinatorMessage<'a, 'b> =
     | Job of 'a
-    | RequestJob of AsyncReplyChannel<WorkerMessage<'a, 'b>>
-    | JobFinished of 'b
+    | RequestJob of AsyncReplyChannel<WorkerMessage<'a>>
+    | JobFinished of 'b list
     | NoMoreJobs
 
-    and Worker<'a, 'b>(coordinator: Coordinator<'a, 'b>) =
+    and StreamerMessage<'b> =
+    | StreamResult of 'b list
+
+    and Worker<'a, 'b>(jobFunc: JobFunc<'a, 'b>, coordinator: Coordinator<'a, 'b>) =
+        let jobFunc = jobFunc
         let coordinator = coordinator
         let mb = MailboxProcessor.Start(fun inbox -> 
             let rec loop () = async {
                 let job = coordinator.GetJob()
                 // printfn "\njobkind: %A\n" jobkind |> ignore
                 match job with
-                | JKJob (f, x) ->
-                    x |> f |> coordinator.JobFinished
+                | JKJob args ->
+                    // printfn $"worker jobs: {args.Length}\n"
+                    let result = args |> List.map jobFunc
+                    result |> coordinator.JobFinished
                     return! loop ()
                 | JKFinito ->
                     return ()
             }
             loop ()
         )
+
+    and Streamer<'b>(coordinatorObservable: CoordinatorObservable<'b>) =
+        let coordinatorObservable = coordinatorObservable
+        let mb = MailboxProcessor.Start(fun inbox -> 
+            let rec loop () = async {
+                let! msg = inbox.Receive()
+                match msg with
+                | StreamResult x -> 
+                    for i in x do
+                        coordinatorObservable.NotifyNext i
+                return! loop ()
+            }
+            loop ()
+        )
+        member this.Stream(x) =
+            mb.Post(StreamResult(x))
+
 
 module CH =
     open System.Threading
