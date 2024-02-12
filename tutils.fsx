@@ -183,13 +183,14 @@ module MBX =
                     ignore()
 
     type Coordinator<'a, 'b> (jobFunc, workerCount) as this =
+        let semCount = workerCount * 8
         let workers = [1..workerCount] |> List.map (fun _ -> new Worker<'a, 'b>(jobFunc, this))
-        let workerQueue = new System.Collections.Generic.Queue<AsyncReplyChannel<WorkerMessage<'a>>>()
-        let dataQueue = new System.Collections.Generic.Queue<'a>()
+        let workerQueue = new System.Collections.Generic.Queue<AsyncReplyChannel<WorkerMessage<'a>>>(workerCount)
+        let dataQueue = new System.Collections.Generic.Queue<'a>(semCount)
         let signaller = new Signaller()
         let coordinatorObservable = new CoordinatorObservable<'b>()
         let streamer = new Streamer<'b>(coordinatorObservable)
-        let sem = new SemaphoreSlim(workerCount * 8)
+        let sem = new SemaphoreSlim(semCount)
         let mutable stop = false
         let mutable tasks = 0
 
